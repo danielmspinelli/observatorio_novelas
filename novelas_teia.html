@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Observatório da Teledramaturgia Brasileira</title>
+    
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --primary: #1a365d;
+            --secondary: #c05621;
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --text: #2d3748;
+            --border: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 { color: var(--primary); text-align: center; margin-bottom: 5px; font-size: 2.2rem; }
+        h2 { color: var(--primary); font-size: 1.4rem; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-top: 0;}
+        p.subtitle { text-align: center; max-width: 1000px; margin-bottom: 30px; line-height: 1.6; color: #4a5568; font-size: 1.1rem; }
+
+        /* --- SISTEMA DE ABAS (AGORA COM 3 ABAS) --- */
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; width: 100%; max-width: 1500px; border-bottom: 2px solid var(--border); padding-bottom: 10px; justify-content: center; flex-wrap: wrap; }
+        .tab-btn { background-color: transparent; border: none; font-size: 1.05rem; font-weight: bold; color: #718096; padding: 12px 20px; cursor: pointer; border-radius: 8px 8px 0 0; transition: all 0.3s ease; }
+        .tab-btn:hover { color: var(--primary); background-color: #edf2f7; }
+        .tab-btn.active { color: white; background-color: var(--primary); box-shadow: 0 -3px 10px rgba(0,0,0,0.1); }
+        .tab-content { display: none; width: 100%; max-width: 1500px; animation: fadeIn 0.4s; }
+        .tab-content.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* --- LAYOUT DO DASHBOARD --- */
+        .dashboard { display: grid; grid-template-columns: 1fr; gap: 25px; }
+        @media (min-width: 1024px) { .dashboard { grid-template-columns: 1fr 1fr; } .full-width { grid-column: span 2; } .half-width { grid-column: span 1; } }
+        .card { background-color: var(--card-bg); border-radius: 12px; box-shadow: 0 8px 15px rgba(0,0,0,0.05); padding: 30px; display: flex; flex-direction: column; position: relative; }
+
+        /* --- CONTROLES DE FILTROS --- */
+        .network-controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; gap: 15px; background: #edf2f7; padding: 15px; border-radius: 8px; border: 1px solid var(--border); }
+        .filters-container { display: flex; flex-wrap: wrap; gap: 15px; flex: 1; }
+        .filter-group { display: flex; flex-direction: column; gap: 5px; font-weight: 600; color: var(--primary); font-size: 0.9rem; }
+        .filter-group select { padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e0; font-size: 0.95rem; color: var(--text); cursor: pointer; background: white; min-width: 160px; max-width: 250px;}
+        
+        .actions-container { display: flex; gap: 10px; flex-wrap: wrap; }
+        .action-btn { background-color: var(--secondary); color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; font-size: 0.95rem; cursor: pointer; transition: background 0.3s; }
+        .action-btn:hover { background-color: #9c4221; }
+        .action-btn.btn-clear { background-color: #718096; }
+        .action-btn.btn-clear:hover { background-color: #4a5568; }
+
+        /* --- GRAFO E ZOOM --- */
+        #mynetwork { width: 100%; height: 75vh; min-height: 500px; border: 1px solid var(--border); border-radius: 8px; background-color: #f8fafc; outline: none; }
+        .zoom-controls { position: absolute; top: 180px; right: 50px; display: flex; flex-direction: column; gap: 10px; z-index: 10; }
+        .zoom-btn { background-color: var(--card-bg); border: 2px solid var(--primary); color: var(--primary); font-weight: bold; font-size: 18px; width: 45px; height: 45px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; }
+        .zoom-btn:hover { background-color: var(--primary); color: white; transform: scale(1.05); }
+        .zoom-btn.reset { font-size: 14px; width: auto; padding: 0 10px; }
+
+        .vis-tooltip { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important; font-size: 14px !important; padding: 12px !important; border-radius: 8px !important; box-shadow: 0 4px 15px rgba(0,0,0,0.15) !important; background-color: white !important; color: #2d3748 !important; border: 1px solid #cbd5e0 !important; }
+        .chart-container { position: relative; height: 420px; width: 100%; margin-top: 10px; }
+
+        /* --- TEXTOS DAS ABAS DE ANÁLISE --- */
+        .text-analysis { line-height: 1.8; font-size: 1.1rem; color: #2d3748; }
+        .text-analysis h2 { border-bottom: 3px solid var(--secondary); display: inline-block; padding-bottom: 5px; margin-top: 40px; font-size: 1.7rem; }
+        .text-analysis h2:first-child { margin-top: 0; }
+        .text-analysis h3 { color: #2b4c7e; font-size: 1.3rem; margin-top: 30px; margin-bottom: 10px; }
+        .text-analysis p { margin-bottom: 20px; text-align: justify; }
+        .text-analysis blockquote { background: #edf2f7; border-left: 5px solid var(--primary); padding: 25px; margin: 30px 0; font-style: italic; border-radius: 0 8px 8px 0; font-size: 1.15rem; color: #1a365d; }
+        
+        .partnership-list { list-style-type: none; padding-left: 0; display: grid; grid-template-columns: 1fr; gap: 20px; }
+        @media (min-width: 1024px) { .partnership-list { grid-template-columns: 1fr 1fr; } }
+        .partnership-list li { background: #f8fafc; border: 1px solid var(--border); padding: 20px; border-radius: 8px; border-left: 5px solid var(--secondary); box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+        .partnership-list strong { color: var(--primary); font-size: 1.2rem; display: block; margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+
+    <h1>🎬 Observatório Histórico da Teledramaturgia</h1>
+    <p class="subtitle">Uma investigação sistêmica sobre meio século de televisão brasileira. Alterne entre as abas abaixo para explorar os dados brutos interativos, ler a análise contextual de mercado ou investigar as correlações e panelinhas de elenco.</p>
+
+    <div class="tabs" role="tablist">
+        <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="tab-dashboard" onclick="openTab(event, 'tab-dashboard')">📊 1. Grafo e Dashboards</button>
+        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-analise" onclick="openTab(event, 'tab-analise')">📝 2. Análise Contextual e Mercado</button>
+        <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-coocorrencias" onclick="openTab(event, 'tab-coocorrencias')">🤝 3. Co-ocorrências e Parcerias</button>
+    </div>
+
+    <div id="tab-dashboard" class="tab-content active" role="tabpanel">
+        <div class="dashboard">
+            <div class="card full-width">
+                <h2>O Multiverso Sistêmico da Globo (1970 - 2025)</h2>
+                <div class="network-controls" role="search" aria-label="Painel de filtros do grafo">
+                    <div class="filters-container">
+                        <div class="filter-group">
+                            <label for="decadeFilter">Década:</label>
+                            <select id="decadeFilter" onchange="applyFilters()"><option value="all">Todas as Décadas</option><option value="1970">Anos 1970</option><option value="1980">Anos 1980</option><option value="1990">Anos 1990</option><option value="2000">Anos 2000</option><option value="2010">Anos 2010</option><option value="2020">Anos 2020+</option></select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="authorFilter">Autor(a):</label>
+                            <select id="authorFilter" onchange="applyFilters()"><option value="all">Todos os Autores</option><option value="Aguinaldo Silva">Aguinaldo Silva</option><option value="Benedito R. Barbosa">Benedito R. Barbosa</option><option value="Gilberto Braga">Gilberto Braga</option><option value="Glória Perez">Glória Perez</option><option value="Janete Clair">Janete Clair</option><option value="João Emanuel C.">João Emanuel C.</option><option value="Manoel Carlos">Manoel Carlos</option><option value="Sílvio de Abreu">Sílvio de Abreu</option><option value="Walcyr Carrasco">Walcyr Carrasco</option></select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="novelaFilter">Novela Específica:</label>
+                            <select id="novelaFilter" onchange="applyFilters()"><option value="all">Todas as Novelas</option></select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="atorFilter">Ator/Atriz Específico:</label>
+                            <select id="atorFilter" onchange="applyFilters()"><option value="all">Todo o Elenco</option></select>
+                        </div>
+                    </div>
+                    <div class="actions-container">
+                        <button class="action-btn btn-clear" onclick="clearFilters()">🧹 Limpar</button>
+                        <button class="action-btn" onclick="exportGrafo()">📸 Salvar Imagem</button>
+                    </div>
+                </div>
+
+                <div class="zoom-controls">
+                    <button class="zoom-btn" onclick="zoomIn()" title="Aumentar Zoom">➕</button>
+                    <button class="zoom-btn" onclick="zoomOut()" title="Diminuir Zoom">➖</button>
+                    <button class="zoom-btn reset" onclick="resetZoom()" title="Centralizar Grafo">🔄 Resetar</button>
+                </div>
+                
+                <div id="mynetwork"></div>
+            </div>
+
+            <div class="card full-width">
+                <h2>A Desidratação da Audiência: Ibope vs. Capítulos ao longo de 50 anos</h2>
+                <div class="chart-container"><canvas id="ibopeCapsChart"></canvas></div>
+            </div>
+
+            <div class="card half-width">
+                <h2>Hegemonia Literária: Os 10 Autores com Mais Obras</h2>
+                <div class="chart-container"><canvas id="autoresVolumeChart"></canvas></div>
+            </div>
+
+            <div class="card half-width">
+                <h2>Eficiência de Massa: Média de Ibope Histórica por Autor</h2>
+                <div class="chart-container"><canvas id="autoresIbopeChart"></canvas></div>
+            </div>
+
+            <div class="card half-width">
+                <h2>A "Panela" de Elenco: Top 10 Atores por Volume de Obras</h2>
+                <div class="chart-container"><canvas id="atoresVolumeChart"></canvas></div>
+            </div>
+
+            <div class="card half-width">
+                <h2>Ímãs de Multidão: Top 10 Atores por Média de Ibope</h2>
+                <div class="chart-container"><canvas id="atoresIbopeChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-analise" class="tab-content" role="tabpanel">
+        <div class="card text-analysis">
+            <h2>📉 A Desidratação Crônica: Uma Análise do Gráfico de Ibope</h2>
+            <p>A observação atenta do gráfico <strong>"Ibope vs. Capítulos"</strong> revela muito mais do que a curva de desempenho de uma única emissora de televisão; ela mapeia a própria desintegração do monopólio da atenção no Brasil. Durante os anos 1970 e 1980 — a era de ouro representada por barras titânicas como as de <em>Selva de Pedra (80 pontos)</em> e <em>Roque Santeiro (74 pontos)</em> —, a teledramaturgia não era apenas uma opção de entretenimento noturno, mas o principal eixo organizador da vida social, ditando modas, pautas políticas e comportamentos em um país recém-urbanizado e carente de opções de lazer fora do lar.</p>
+            <p>Contudo, a inflexão da linha laranja rumo ao declínio vertiginoso nos anos 2010 e 2020 documenta uma metamorfose estrutural. A pulverização da audiência impulsionada pela democratização da banda larga, a invasão massiva de plataformas de streaming de vídeo sob demanda (VOD) e o sequestro da atenção pelas redes sociais transformaram o consumo familiar centralizado na sala de estar em um consumo individualizado, onipresente e assíncrono nas telas dos smartphones. Neste contexto hiperfragmentado, um índice de 39 pontos alcançado por <em>Avenida Brasil (2012)</em> é considerado, por muitos sociólogos da mídia, um feito matemático muito mais complexo e improvável de se replicar do que os 60 pontos registrados nos anos 80, visto que exigiu a união de uma audiência que já possuía uma miríade de outras opções a um clique de distância.</p>
+
+            <h2>✍️ O Oligopólio Narrativo: Analisando a Hegemonia Literária</h2>
+            <p>Ao examinarmos os gráficos de barra focados nos autores, salta aos olhos a existência de um verdadeiro <strong>oligopólio narrativo</strong>. O mercado da teledramaturgia no horário nobre foi arquitetado e sustentado por um "Clube Fechado" de mentes criativas. O gráfico de volume demonstra que as rédeas do imaginário nacional foram passadas de mão em mão num ciclo extremamente restrito: de Janete Clair para Aguinaldo Silva, Gilberto Braga, Sílvio de Abreu e Manoel Carlos.</p>
+            <p>O gráfico espelhado que exibe a "Eficiência de Massa" (Média de Ibope) escancara uma injustiça estatística inerente à transição de gerações. Janete Clair reina incontestável com médias beirando os 60 pontos, mas ela navegou num "oceano azul" sem concorrência digital. Por outro lado, arquitetos da televisão contemporânea como João Emanuel Carneiro e Walcyr Carrasco encontram-se na base desse ranking histórico de Ibope. Isso não reflete uma queda na qualidade dramatúrgica, mas sim o sacrifício de serem os "capitães do navio durante a tempestade digital", lutando heroicamente para manter a relevância cultural e o faturamento publicitário operando num teto de vidro de 30 pontos.</p>
+
+            <blockquote>"A novela brasileira deixou de ser uma missa ecumênica que reunia 80% do país no mesmo horário, para se tornar a mais sofisticada 'série de longa duração' operando em sobrevivência no mais letal dos campos de batalha: a guerra da atenção digital."</blockquote>
+
+            <h2>🔄 Volume vs. Eficiência: A Interpretação dos Gráficos de Atores</h2>
+            <p>Os dois gráficos dedicados aos atores destrincham uma tese fundamental do casting televisivo: o <strong>volume de trabalho não garante, necessariamente, a maior média histórica</strong>. O ranking de volume é encabeçado por verdadeiros operários da arte — Tony Ramos, Antônio Fagundes e José Mayer —, homens que funcionaram como pilares ininterruptos da grade de programação por quatro décadas. A escalação deles é a prova inconteste de uma estratégia de aversão a risco por parte da emissora: em um produto que custa centenas de milhões, apostar no "capital de familiaridade" de um rosto amado pelo público é o seguro de vida para atrair cotas de patrocínio.</p>
+            <p>Entretanto, ao analisarmos o gráfico de <em>"Ímãs de Multidão" (Top Ibope Médio)</em>, a configuração muda. Nomes como Regina Duarte (a eterna 'Namoradinha do Brasil'), Lima Duarte e Betty Faria disparam. Isso ocorre porque o auge da força de trabalho desses atores coincidiu com a era de pico absoluto de audiência da TV aberta nos anos 70 e 80. A média deles é blindada pelos estrondosos sucessos do passado, uma matemática inalcançável para um ator da nova geração, por mais talentoso e requisitado que seja atualmente.</p>
+        </div>
+    </div>
+
+    <div id="tab-coocorrencias" class="tab-content" role="tabpanel">
+        <div class="card text-analysis">
+            
+            <h2>🎭 As Panelinhas Literárias: Autores e seus Atores Fetiche</h2>
+            <p>Ao interagir com o grafo cruzando o "Filtro de Autor", fica evidente que a criação literária na teledramaturgia raramente é um ato isolado. Os maiores roteiristas do Brasil operam sob um sistema de "panelinhas criativas" ou "atores fetiche". O autor, ao conceber a psicologia de um personagem, frequentemente o escreve já ouvindo a entonação vocal e imaginando as expressões faciais de um ator específico com quem possui profunda simbiose artística. Essa correlação Autor-Ator é o verdadeiro motor secreto por trás das engrenagens do horário nobre.</p>
+
+            <ul class="partnership-list">
+                <li>
+                    <strong>O Eixo de Manoel Carlos: O Crônista do Leblon</strong><br>
+                    Manoel Carlos escreve crônicas urbanas focadas no cotidiano da classe média alta carioca. Seu universo exigia atrizes capazes de transmitir complexidade emocional através de silêncios e conflitos familiares intensos. Suas parcerias absolutas foram com <strong>Lília Cabral</strong>, <strong>Regina Duarte</strong> e <strong>Vera Fischer</strong> (as icônicas "Helenas" e antagonistas), além da marcante recorrência de <strong>Vivianne Pasmanter</strong> e <strong>José Mayer</strong> como o galã imperfeito e rústico.
+                </li>
+                <li>
+                    <strong>O Eixo de Gilberto Braga: A Alta Sociedade e a Vilania Elegante</strong><br>
+                    Famoso por dissecar a corrupção da elite e o submundo do poder com diálogos ácidos e sofisticados. Gilberto encontrou em <strong>Glória Pires</strong> (que deu vida à imortal vilã Maria de Fátima) a sua tradutora mor. Outros membros fixos de sua panela refinada incluem <strong>Malu Mader</strong>, <strong>Cláudia Abreu</strong> e <strong>Fábio Assunção</strong>, escalados repetidamente para representar a dicotomia entre a aristocracia corrompida e os heróis éticos.
+                </li>
+                <li>
+                    <strong>O Eixo de Aguinaldo Silva: O Realismo Fantástico e a Força Nordestina</strong><br>
+                    Mestre em criar micro-universos hiperbólicos, vilãs caricatas, bordões inesquecíveis e mulheres com temperamento vulcânico. O filtro de Aguinaldo no grafo acenderá imediatamente conexões brilhantes com <strong>Susana Vieira</strong>, <strong>Lília Cabral</strong> (a inesquecível Pereirão), <strong>Renata Sorrah</strong> (Nazaré Tedesco) e <strong>José Wilker</strong> (como o icônico Giovanni Improtta e Roque Santeiro).
+                </li>
+                <li>
+                    <strong>O Eixo de Walcyr Carrasco: O Rei do Ritmo Frenético</strong><br>
+                    Walcyr é o atual "salvador da pátria" da emissora, conhecido por viradas de roteiro alucinantes a cada capítulo e textos extremamente didáticos que conversam com a massa popular. Seu grupo de confiança, forjado muitas vezes na faixa das 18h e elevado às 21h, inclui a genialidade cômica e dramática de <strong>Marieta Severo</strong>, o apelo de <strong>Agatha Moreira</strong>, além de <strong>Juliana Paes</strong> e <strong>Sérgio Guizé</strong>.
+                </li>
+                <li>
+                    <strong>O Eixo de João Emanuel Carneiro: O Suspense Cinematográfico</strong><br>
+                    Responsável por trazer a linguagem dos seriados de mistério para a novela diária. Suas obras são repletas de tramas de vingança, identidades falsas e um ritmo sufocante. Sua simbiose definitiva e o maior acerto de casting do século XXI foi a aliança com <strong>Adriana Esteves</strong> (Carminha e Laureta). <strong>Cauã Reymond</strong>, <strong>Murilo Benício</strong> e <strong>Giovanna Antonelli</strong> formam o núcleo duro que garante a entrega visceral que seu texto sombrio exige.
+                </li>
+            </ul>
+
+            <h2 style="margin-top: 50px;">🤝 A Química Testada: Duplas de Elenco que Mais Trabalharam Juntas</h2>
+            <p>Além da relação Autor-Ator, a <strong>co-ocorrência entre o próprio elenco</strong> (quando dois nós de atores se conectam repetidamente aos mesmos nós de novelas) revela os "casamentos profissionais" mais duradouros. Os diretores de elenco unem talentos que demonstram ter forte "química" e aceitação orgânica do público de casa para ancorar grandes apostas.</p>
+
+            <ul class="partnership-list">
+                <li>
+                    <strong>Antônio Fagundes & Regina Duarte</strong><br>
+                    O ápice da teledramaturgia clássica. Protagonizaram e cruzaram caminhos em marcos intocáveis como <em>Vale Tudo (1988)</em>, <em>Rainha da Sucata (1990)</em> e <em>Por Amor (1997)</em>. A presença conjunta da dupla na tela era o atestado de credibilidade máxima para a audiência da família brasileira.
+                </li>
+                <li>
+                    <strong>Tony Ramos & Glória Pires</strong><br>
+                    Atravessando décadas e se reinventando constantemente, não apenas na televisão mas no cinema nacional ("Se Eu Fosse Você"). Eles ancoraram o núcleo principal de sucessos que vão desde <em>Belíssima (2005)</em>, passando por <em>Paraíso Tropical (2007)</em> até a recentíssima <em>Terra e Paixão (2023)</em>. Uma segurança inabalável para diretores de estúdio.
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        function openTab(evt, tabName) {
+            let tabcontent = document.getElementsByClassName("tab-content");
+            for (let i = 0; i < tabcontent.length; i++) { tabcontent[i].style.display = "none"; tabcontent[i].classList.remove("active"); }
+            let tablinks = document.getElementsByClassName("tab-btn");
+            for (let i = 0; i < tablinks.length; i++) { tablinks[i].classList.remove("active"); tablinks[i].setAttribute("aria-selected", "false"); }
+            document.getElementById(tabName).style.display = "block";
+            document.getElementById(tabName).classList.add("active");
+            evt.currentTarget.classList.add("active");
+            evt.currentTarget.setAttribute("aria-selected", "true");
+            if(tabName === 'tab-dashboard') { setTimeout(() => { window.dispatchEvent(new Event('resize')); }, 100); }
+        }
+
+        const rawNodes = [
+            // Novelas
+            { id: 101, label: 'Pecado\nCapital', group: 'novela', value: 59, decade: '1970', author: 'Janete Clair' },
+            { id: 102, label: 'Dancin\'\nDays', group: 'novela', value: 59, decade: '1970', author: 'Gilberto Braga' },
+            { id: 103, label: 'Pai Herói', group: 'novela', value: 61, decade: '1970', author: 'Janete Clair' },
+            { id: 131, label: 'Irmãos\nCoragem', group: 'novela', value: 60, decade: '1970', author: 'Janete Clair' },
+            { id: 132, label: 'Selva de\nPedra', group: 'novela', value: 80, decade: '1970', author: 'Janete Clair' },
+            { id: 133, label: 'O Astro', group: 'novela', value: 60, decade: '1970', author: 'Janete Clair' },
+            { id: 163, label: 'O Casarão', group: 'novela', value: 52, decade: '1970', author: 'Outros' },
+            { id: 164, label: 'Escalada', group: 'novela', value: 50, decade: '1970', author: 'Outros' },
+            { id: 104, label: 'Roque\nSanteiro', group: 'novela', value: 74, decade: '1980', author: 'Aguinaldo Silva' },
+            { id: 105, label: 'Vale Tudo', group: 'novela', value: 56, decade: '1980', author: 'Gilberto Braga' },
+            { id: 106, label: 'Tieta', group: 'novela', value: 65, decade: '1980', author: 'Aguinaldo Silva' },
+            { id: 107, label: 'Rainha da\nSucata', group: 'novela', value: 61, decade: '1980', author: 'Sílvio de Abreu' },
+            { id: 134, label: 'Água Viva', group: 'novela', value: 58, decade: '1980', author: 'Gilberto Braga' },
+            { id: 135, label: 'Baila\nComigo', group: 'novela', value: 56, decade: '1980', author: 'Manoel Carlos' },
+            { id: 136, label: 'Louco\nAmor', group: 'novela', value: 51, decade: '1980', author: 'Gilberto Braga' },
+            { id: 137, label: 'Salvador\nda Pátria', group: 'novela', value: 62, decade: '1980', author: 'Outros' },
+            { id: 140, label: 'Pedra\ns/ Pedra', group: 'novela', value: 57, decade: '1980', author: 'Aguinaldo Silva' },
+            { id: 165, label: 'Coração\nAlado', group: 'novela', value: 57, decade: '1980', author: 'Janete Clair' },
+            { id: 108, label: 'Renascer', group: 'novela', value: 61, decade: '1990', author: 'Benedito R. Barbosa' },
+            { id: 109, label: 'O Rei\ndo Gado', group: 'novela', value: 52, decade: '1990', author: 'Benedito R. Barbosa' },
+            { id: 110, label: 'Por Amor', group: 'novela', value: 42, decade: '1990', author: 'Manoel Carlos' },
+            { id: 111, label: 'Torre\nde Babel', group: 'novela', value: 47, decade: '1990', author: 'Sílvio de Abreu' },
+            { id: 112, label: 'Terra\nNostra', group: 'novela', value: 44, decade: '1990', author: 'Benedito R. Barbosa' },
+            { id: 138, label: 'Meu Bem,\nMeu Mal', group: 'novela', value: 50, decade: '1990', author: 'Outros' },
+            { id: 139, label: 'O Dono\ndo Mundo', group: 'novela', value: 43, decade: '1990', author: 'Gilberto Braga' },
+            { id: 141, label: 'Fera\nFerida', group: 'novela', value: 53, decade: '1990', author: 'Aguinaldo Silva' },
+            { id: 142, label: 'A Próxima\nVítima', group: 'novela', value: 47, decade: '1990', author: 'Sílvio de Abreu' },
+            { id: 143, label: 'A Indomada', group: 'novela', value: 48, decade: '1990', author: 'Aguinaldo Silva' },
+            { id: 144, label: 'Suave\nVeneno', group: 'novela', value: 38, decade: '1990', author: 'Aguinaldo Silva' },
+            { id: 113, label: 'Laços de\nFamília', group: 'novela', value: 45, decade: '2000', author: 'Manoel Carlos' },
+            { id: 114, label: 'O Clone', group: 'novela', value: 47, decade: '2000', author: 'Glória Perez' },
+            { id: 115, label: 'Mulheres\nApaixonadas', group: 'novela', value: 47, decade: '2000', author: 'Manoel Carlos' },
+            { id: 116, label: 'Senhora\ndo Destino', group: 'novela', value: 50, decade: '2000', author: 'Aguinaldo Silva' },
+            { id: 117, label: 'Belíssima', group: 'novela', value: 48, decade: '2000', author: 'Sílvio de Abreu' },
+            { id: 119, label: 'Caminho\ndas Índias', group: 'novela', value: 39, decade: '2000', author: 'Glória Perez' },
+            { id: 145, label: 'Celebridade', group: 'novela', value: 46, decade: '2000', author: 'Gilberto Braga' },
+            { id: 146, label: 'América', group: 'novela', value: 49, decade: '2000', author: 'Glória Perez' },
+            { id: 147, label: 'Páginas\nda Vida', group: 'novela', value: 47, decade: '2000', author: 'Manoel Carlos' },
+            { id: 148, label: 'Paraíso\nTropical', group: 'novela', value: 43, decade: '2000', author: 'Gilberto Braga' },
+            { id: 151, label: 'Esperança', group: 'novela', value: 38, decade: '2000', author: 'Benedito R. Barbosa' },
+            { id: 152, label: 'Porto dos\nMilagres', group: 'novela', value: 47, decade: '2000', author: 'Aguinaldo Silva' },
+            { id: 118, label: 'A Favorita', group: 'novela', value: 40, decade: '2010', author: 'João Emanuel C.' },
+            { id: 120, label: 'Fina\nEstampa', group: 'novela', value: 39, decade: '2010', author: 'Aguinaldo Silva' },
+            { id: 121, label: 'Avenida\nBrasil', group: 'novela', value: 39, decade: '2010', author: 'João Emanuel C.' },
+            { id: 122, label: 'Amor à\nVida', group: 'novela', value: 36, decade: '2010', author: 'Walcyr Carrasco' },
+            { id: 123, label: 'A Força\ndo Querer', group: 'novela', value: 36, decade: '2010', author: 'Glória Perez' },
+            { id: 124, label: 'O Outro Lado\ndo Paraíso', group: 'novela', value: 38, decade: '2010', author: 'Walcyr Carrasco' },
+            { id: 125, label: 'A Dona\ndo Pedaço', group: 'novela', value: 36, decade: '2010', author: 'Walcyr Carrasco' },
+            { id: 126, label: 'Amor de\nMãe', group: 'novela', value: 31, decade: '2010', author: 'Outros' },
+            { id: 149, label: 'Passione', group: 'novela', value: 35, decade: '2010', author: 'Sílvio de Abreu' },
+            { id: 150, label: 'Império', group: 'novela', value: 33, decade: '2010', author: 'Aguinaldo Silva' },
+            { id: 153, label: 'Babilônia', group: 'novela', value: 25, decade: '2010', author: 'Gilberto Braga' },
+            { id: 154, label: 'A Regra\ndo Jogo', group: 'novela', value: 28, decade: '2010', author: 'João Emanuel C.' },
+            { id: 155, label: 'Velho Chico', group: 'novela', value: 29, decade: '2010', author: 'Benedito R. Barbosa' },
+            { id: 156, label: 'A Lei\ndo Amor', group: 'novela', value: 27, decade: '2010', author: 'Outros' },
+            { id: 157, label: 'Segundo Sol', group: 'novela', value: 33, decade: '2010', author: 'João Emanuel C.' },
+            { id: 158, label: 'O Sétimo\nGuardião', group: 'novela', value: 29, decade: '2010', author: 'Aguinaldo Silva' },
+            { id: 162, label: 'Em Família', group: 'novela', value: 30, decade: '2010', author: 'Manoel Carlos' },
+            { id: 127, label: 'Pantanal', group: 'novela', value: 30, decade: '2020', author: 'Benedito R. Barbosa' },
+            { id: 128, label: 'Terra e\nPaixão', group: 'novela', value: 27, decade: '2020', author: 'Walcyr Carrasco' },
+            { id: 129, label: 'Mania\nde Você', group: 'novela', value: 21, decade: '2020', author: 'João Emanuel C.' },
+            { id: 130, label: 'Vale Tudo\nRemake', group: 'novela', value: 24, decade: '2020', author: 'Outros' },
+            { id: 159, label: 'Um Lugar\nao Sol', group: 'novela', value: 22, decade: '2020', author: 'Outros' },
+            { id: 160, label: 'Travessia', group: 'novela', value: 24, decade: '2020', author: 'Glória Perez' },
+            { id: 161, label: 'Três Graças', group: 'novela', value: 24, decade: '2020', author: 'Aguinaldo Silva' },
+
+            // Atores
+            { id: 1, label: 'Tony\nRamos', group: 'ator', value: 16 }, { id: 2, label: 'Antônio\nFagundes', group: 'ator', value: 14 },
+            { id: 3, label: 'Tarcísio\nMeira', group: 'ator', value: 13 }, { id: 4, label: 'José\nMayer', group: 'ator', value: 12 },
+            { id: 5, label: 'Glória\nPires', group: 'ator', value: 11 }, { id: 6, label: 'Susana\nVieira', group: 'ator', value: 10 },
+            { id: 7, label: 'Adriana\nEsteves', group: 'ator', value: 9 }, { id: 8, label: 'Murilo\nBenício', group: 'ator', value: 9 },
+            { id: 9, label: 'Cauã\nReymond', group: 'ator', value: 8 }, { id: 10, label: 'Regina\nDuarte', group: 'ator', value: 10 },
+            { id: 11, label: 'Marcos\nPalmeira', group: 'ator', value: 9 }, { id: 12, label: 'Fernanda\nMontenegro', group: 'ator', value: 8 },
+            { id: 13, label: 'Giovanna\nAntonelli', group: 'ator', value: 7 }, { id: 14, label: 'Juliana\nPaes', group: 'ator', value: 6 },
+            { id: 15, label: 'Taís\nAraújo', group: 'ator', value: 6 }, { id: 16, label: 'Lima\nDuarte', group: 'ator', value: 8 },
+            { id: 17, label: 'Lília\nCabral', group: 'ator', value: 8 }, { id: 18, label: 'Chay\nSuede', group: 'ator', value: 5 },
+            { id: 19, label: 'Francisco\nCuoco', group: 'ator', value: 9 }, { id: 20, label: 'Betty\nFaria', group: 'ator', value: 7 },
+            { id: 21, label: 'Reynaldo\nGianecchini', group: 'ator', value: 7 }, { id: 22, label: 'Paolla\nOliveira', group: 'ator', value: 6 },
+            { id: 23, label: 'Carolina\nDieckmann', group: 'ator', value: 7 }, { id: 24, label: 'Renata\nSorrah', group: 'ator', value: 6 },
+            { id: 25, label: 'Marieta\nSevero', group: 'ator', value: 5 }, { id: 26, label: 'Christiane\nTorloni', group: 'ator', value: 7 },
+            { id: 27, label: 'Cláudia\nRaia', group: 'ator', value: 8 }, { id: 28, label: 'Vera\nFischer', group: 'ator', value: 7 },
+            { id: 29, label: 'Fábio\nAssunção', group: 'ator', value: 6 }, { id: 30, label: 'Malu\nMader', group: 'ator', value: 5 },
+            { id: 31, label: 'Cássia\nKis', group: 'ator', value: 6 }, { id: 32, label: 'Alexandre\nNero', group: 'ator', value: 5 },
+            { id: 33, label: 'Rodrigo\nLombardi', group: 'ator', value: 6 }, { id: 34, label: 'Camila\nPitanga', group: 'ator', value: 5 },
+            { id: 35, label: 'Lídia\nBrondi', group: 'ator', value: 6 }, { id: 36, label: 'Deborah\nSecco', group: 'ator', value: 6 },
+            { id: 37, label: 'Marcos\nPaulo', group: 'ator', value: 5 }, { id: 38, label: 'Letícia\nSpiller', group: 'ator', value: 4 },
+            { id: 39, label: 'Drica\nMoraes', group: 'ator', value: 3 }, { id: 40, label: 'Joana\nFomm', group: 'ator', value: 5 },
+            { id: 41, label: 'Aracy\nBalabanian', group: 'ator', value: 5 }, { id: 42, label: 'Cássio\nGabus Mendes', group: 'ator', value: 5 },
+            { id: 43, label: 'Juca\nde Oliveira', group: 'ator', value: 4 }, { id: 44, label: 'Bruna\nLombardi', group: 'ator', value: 3 },
+            { id: 45, label: 'Lázaro\nRamos', group: 'ator', value: 3 }, { id: 46, label: 'Mateus\nSolano', group: 'ator', value: 4 },
+            { id: 47, label: 'Thiago\nLacerda', group: 'ator', value: 5 }, { id: 48, label: 'Ary\nFontoura', group: 'ator', value: 7 },
+            { id: 49, label: 'Eliane\nGiardini', group: 'ator', value: 6 }, { id: 50, label: 'Alexandre\nBorges', group: 'ator', value: 6 },
+            { id: 51, label: 'Laura\nCardoso', group: 'ator', value: 5 }, { id: 52, label: 'Irene\nRavache', group: 'ator', value: 6 },
+            { id: 53, label: 'Dira\nPaes', group: 'ator', value: 5 }, { id: 54, label: 'Flávia\nAlessandra', group: 'ator', value: 5 },
+            { id: 55, label: 'Marcos\nCaruso', group: 'ator', value: 4 }, { id: 56, label: 'Humberto\nMartins', group: 'ator', value: 6 },
+            { id: 57, label: 'Marcello\nNovaes', group: 'ator', value: 4 }, { id: 58, label: 'Nathalia\nDill', group: 'ator', value: 4 },
+            { id: 59, label: 'Isis\nValverde', group: 'ator', value: 5 }, { id: 60, label: 'Vladimir\nBrichta', group: 'ator', value: 4 },
+            { id: 61, label: 'Glória\nMenezes', group: 'ator', value: 9 }, { id: 62, label: 'Domingos\nMontagner', group: 'ator', value: 3 },
+            { id: 63, label: 'Wagner\nMoura', group: 'ator', value: 2 }, { id: 64, label: 'Maitê\nProença', group: 'ator', value: 4 },
+            { id: 65, label: 'Lucélia\nSantos', group: 'ator', value: 3 }, { id: 66, label: 'Letícia\nSabatella', group: 'ator', value: 5 },
+            { id: 67, label: 'Dina\nSfat', group: 'ator', value: 5 }, { id: 68, label: 'Nathália\nTimberg', group: 'ator', value: 6 },
+            { id: 69, label: 'Zilka\nSalaberry', group: 'ator', value: 4 }, { id: 70, label: 'Mário\nLago', group: 'ator', value: 7 },
+            { id: 71, label: 'Agatha\nMoreira', group: 'ator', value: 4 }, { id: 72, label: 'Emilio\nDantas', group: 'ator', value: 3 },
+            { id: 73, label: 'Nanda\nCosta', group: 'ator', value: 3 }, { id: 74, label: 'Sérgio\nGuizé', group: 'ator', value: 3 },
+            { id: 75, label: 'Marco\nPigossi', group: 'ator', value: 3 }, { id: 76, label: 'Cláudia\nAbreu', group: 'ator', value: 5 },
+            { id: 77, label: 'Malu\nGalli', group: 'ator', value: 3 }, { id: 78, label: 'Humberto\nCarrão', group: 'ator', value: 4 },
+            { id: 79, label: 'Grazi\nMassafera', group: 'ator', value: 5 }, { id: 80, label: 'Alinne\nMoraes', group: 'ator', value: 4 }
+        ];
+
+        const formattedNodes = rawNodes.map(node => {
+            let cleanName = node.label.replace(/\n/g, ' '); 
+            if (node.group === 'novela') {
+                node.title = `<div style="font-family: 'Segoe UI', sans-serif;">
+                    <strong style="color: #1a365d; font-size: 15px;">${cleanName}</strong><br>
+                    <span style="color: #c05621;">Década: ${node.decade}s</span><br>
+                    Autor(a): ${node.author}<br>
+                    Média de Ibope: ${node.value} pts
+                </div>`;
+            } else {
+                node.title = `<div style="font-family: 'Segoe UI', sans-serif;">
+                    <strong style="color: #c05621; font-size: 15px;">${cleanName}</strong><br>
+                    Protagonizou: ${node.value} novelas
+                </div>`;
+            }
+            return node;
+        });
+
+        const rawEdges = [
+            { from: 19, to: 101 }, { from: 20, to: 101 }, { from: 16, to: 101 }, { from: 2, to: 102 }, { from: 5, to: 102 }, { from: 35, to: 102 }, { from: 40, to: 102 }, { from: 1, to: 103 }, { from: 10, to: 104 }, { from: 16, to: 104 }, { from: 31, to: 104 }, { from: 35, to: 104 }, { from: 10, to: 105 }, { from: 5, to: 105 }, { from: 2, to: 105 }, { from: 24, to: 105 }, { from: 35, to: 105 }, { from: 42, to: 105 }, { from: 20, to: 106 }, { from: 4, to: 106 }, { from: 35, to: 106 }, { from: 37, to: 106 }, { from: 40, to: 106 }, { from: 42, to: 106 }, { from: 10, to: 107 }, { from: 1, to: 107 }, { from: 2, to: 107 }, { from: 12, to: 107 }, { from: 27, to: 107 }, { from: 41, to: 107 }, { from: 2, to: 108 }, { from: 11, to: 108 }, { from: 7, to: 108 }, { from: 2, to: 109 }, { from: 5, to: 109 }, { from: 29, to: 109 }, { from: 10, to: 110 }, { from: 2, to: 110 }, { from: 6, to: 110 }, { from: 8, to: 110 }, { from: 23, to: 110 }, { from: 29, to: 110 }, { from: 31, to: 110 }, { from: 3, to: 111 }, { from: 1, to: 111 }, { from: 7, to: 111 }, { from: 27, to: 111 }, { from: 43, to: 111 }, { from: 2, to: 112 }, { from: 21, to: 113 }, { from: 23, to: 113 }, { from: 4, to: 113 }, { from: 25, to: 113 }, { from: 13, to: 113 }, { from: 1, to: 113 }, { from: 28, to: 113 }, { from: 36, to: 113 }, { from: 8, to: 114 }, { from: 13, to: 114 }, { from: 28, to: 114 }, { from: 43, to: 114 }, { from: 4, to: 115 }, { from: 1, to: 115 }, { from: 6, to: 115 }, { from: 23, to: 115 }, { from: 26, to: 115 }, { from: 34, to: 115 }, { from: 6, to: 116 }, { from: 24, to: 116 }, { from: 23, to: 116 }, { from: 4, to: 116 }, { from: 38, to: 116 }, { from: 5, to: 117 }, { from: 12, to: 117 }, { from: 1, to: 117 }, { from: 21, to: 117 }, { from: 22, to: 117 }, { from: 27, to: 117 }, { from: 34, to: 117 }, { from: 8, to: 118 }, { from: 9, to: 118 }, { from: 27, to: 118 }, { from: 36, to: 118 }, { from: 14, to: 119 }, { from: 1, to: 119 }, { from: 16, to: 119 }, { from: 26, to: 119 }, { from: 28, to: 119 }, { from: 33, to: 119 }, { from: 17, to: 120 }, { from: 26, to: 120 }, { from: 32, to: 120 }, { from: 7, to: 121 }, { from: 8, to: 121 }, { from: 9, to: 121 }, { from: 22, to: 122 }, { from: 2, to: 122 }, { from: 6, to: 122 }, { from: 14, to: 123 }, { from: 22, to: 123 }, { from: 17, to: 123 }, { from: 33, to: 123 }, { from: 25, to: 124 }, { from: 5, to: 124 }, { from: 12, to: 124 }, { from: 16, to: 124 }, { from: 14, to: 125 }, { from: 11, to: 125 }, { from: 21, to: 125 }, { from: 22, to: 125 }, { from: 7, to: 126 }, { from: 15, to: 126 }, { from: 18, to: 126 }, { from: 8, to: 126 }, { from: 11, to: 127 }, { from: 8, to: 127 }, { from: 9, to: 128 }, { from: 1, to: 128 }, { from: 5, to: 128 }, { from: 18, to: 129 }, { from: 7, to: 129 }, { from: 33, to: 129 }, { from: 15, to: 130 }, { from: 9, to: 130 }, { from: 22, to: 130 }, { from: 23, to: 130 }, { from: 3, to: 131 }, { from: 10, to: 131 }, { from: 10, to: 132 }, { from: 19, to: 132 }, { from: 19, to: 133 }, { from: 1, to: 133 }, { from: 20, to: 134 }, { from: 5, to: 134 }, { from: 1, to: 135 }, { from: 20, to: 135 }, { from: 35, to: 135 }, { from: 40, to: 135 }, { from: 3, to: 136 }, { from: 5, to: 136 }, { from: 44, to: 136 }, { from: 16, to: 137 }, { from: 19, to: 137 }, { from: 20, to: 137 }, { from: 6, to: 137 }, { from: 37, to: 137 }, { from: 4, to: 138 }, { from: 16, to: 138 }, { from: 35, to: 138 }, { from: 37, to: 138 }, { from: 42, to: 138 }, { from: 2, to: 139 }, { from: 12, to: 139 }, { from: 5, to: 139 }, { from: 30, to: 139 }, { from: 16, to: 140 }, { from: 24, to: 140 }, { from: 7, to: 140 }, { from: 4, to: 141 }, { from: 6, to: 141 }, { from: 16, to: 141 }, { from: 43, to: 141 }, { from: 1, to: 142 }, { from: 6, to: 142 }, { from: 16, to: 142 }, { from: 41, to: 142 }, { from: 7, to: 143 }, { from: 4, to: 143 }, { from: 24, to: 143 }, { from: 20, to: 143 }, { from: 5, to: 144 }, { from: 20, to: 144 }, { from: 38, to: 144 }, { from: 11, to: 145 }, { from: 14, to: 145 }, { from: 29, to: 145 }, { from: 30, to: 145 }, { from: 36, to: 145 }, { from: 8, to: 146 }, { from: 36, to: 146 }, { from: 10, to: 147 }, { from: 17, to: 147 }, { from: 4, to: 147 }, { from: 1, to: 148 }, { from: 5, to: 148 }, { from: 29, to: 148 }, { from: 34, to: 148 }, { from: 12, to: 149 }, { from: 1, to: 149 }, { from: 21, to: 149 }, { from: 23, to: 149 }, { from: 19, to: 149 }, { from: 33, to: 149 }, { from: 41, to: 149 }, { from: 17, to: 150 }, { from: 32, to: 150 }, { from: 39, to: 150 }, { from: 21, to: 151 }, { from: 51, to: 151 }, { from: 53, to: 151 }, { from: 11, to: 152 }, { from: 54, to: 152 }, { from: 2, to: 152 }, { from: 31, to: 152 }, { from: 34, to: 153 }, { from: 5, to: 153 }, { from: 7, to: 153 }, { from: 68, to: 153 }, { from: 32, to: 154 }, { from: 13, to: 154 }, { from: 9, to: 154 }, { from: 1, to: 154 }, { from: 31, to: 154 }, { from: 75, to: 154 }, { from: 2, to: 155 }, { from: 34, to: 155 }, { from: 62, to: 155 }, { from: 26, to: 155 }, { from: 53, to: 155 }, { from: 76, to: 156 }, { from: 21, to: 156 }, { from: 4, to: 156 }, { from: 47, to: 156 }, { from: 79, to: 156 }, { from: 13, to: 157 }, { from: 72, to: 157 }, { from: 36, to: 157 }, { from: 7, to: 157 }, { from: 60, to: 157 }, { from: 18, to: 157 }, { from: 17, to: 158 }, { from: 1, to: 158 }, { from: 38, to: 158 }, { from: 54, to: 158 }, { from: 9, to: 159 }, { from: 80, to: 159 }, { from: 25, to: 159 }, { from: 18, to: 160 }, { from: 31, to: 160 }, { from: 56, to: 160 }, { from: 13, to: 160 }, { from: 32, to: 160 }, { from: 39, to: 160 }, { from: 53, to: 161 }, { from: 79, to: 161 }, { from: 8, to: 161 }, { from: 11, to: 161 }, { from: 21, to: 162 }, { from: 13, to: 162 }, { from: 56, to: 162 }, { from: 58, to: 162 }, { from: 67, to: 163 }, { from: 70, to: 163 }, { from: 24, to: 163 }, { from: 3, to: 164 }, { from: 6, to: 164 }, { from: 70, to: 164 }, { from: 68, to: 164 }, { from: 3, to: 165 }, { from: 28, to: 165 }, { from: 41, to: 165 }, { from: 61, to: 101 }, { from: 61, to: 108 }, { from: 61, to: 110 }, { from: 61, to: 116 }, { from: 61, to: 118 }, { from: 63, to: 148 }, { from: 64, to: 137 }, { from: 64, to: 144 }, { from: 65, to: 134 }, { from: 65, to: 136 }, { from: 66, to: 114 }, { from: 66, to: 119 }, { from: 66, to: 111 }, { from: 69, to: 131 }, { from: 69, to: 104 }, { from: 71, to: 125 }, { from: 71, to: 128 }, { from: 71, to: 129 }, { from: 73, to: 157 }, { from: 73, to: 126 }, { from: 74, to: 124 }, { from: 74, to: 125 }, { from: 77, to: 126 }, { from: 77, to: 130 }, { from: 78, to: 126 }, { from: 78, to: 130 }
+        ];
+
+        window.onload = function() {
+            const novelaSelect = document.getElementById('novelaFilter');
+            const atorSelect = document.getElementById('atorFilter');
+            
+            const novelas = formattedNodes.filter(n => n.group === 'novela').sort((a,b) => a.label.replace(/\n/g, ' ').localeCompare(b.label.replace(/\n/g, ' ')));
+            novelas.forEach(n => {
+                let opt = document.createElement('option');
+                opt.value = n.id;
+                opt.text = n.label.replace(/\n/g, ' ');
+                novelaSelect.appendChild(opt);
+            });
+
+            const atores = formattedNodes.filter(n => n.group === 'ator').sort((a,b) => a.label.replace(/\n/g, ' ').localeCompare(b.label.replace(/\n/g, ' ')));
+            atores.forEach(a => {
+                let opt = document.createElement('option');
+                opt.value = a.id;
+                opt.text = a.label.replace(/\n/g, ' ');
+                atorSelect.appendChild(opt);
+            });
+        };
+
+        const nodesDataSet = new vis.DataSet(formattedNodes);
+        const edgesDataSet = new vis.DataSet(rawEdges);
+        const container = document.getElementById('mynetwork');
+        
+        const options = {
+            interaction: { hover: true, hoverConnectedEdges: true, selectConnectedEdges: true, tooltipDelay: 100 },
+            nodes: {
+                scaling: { min: 10, max: 80, label: { enabled: true, min: 11, max: 18 } },
+                font: { face: 'Segoe UI', strokeWidth: 3, strokeColor: '#f8fafc' }, borderWidth: 2, borderWidthSelected: 5
+            },
+            edges: {
+                color: { color: '#cbd5e0', highlight: '#c05621', hover: '#c05621', opacity: 0.35 },
+                width: 1.5, selectionWidth: 4, hoverWidth: 3, smooth: { type: 'continuous' }
+            },
+            groups: {
+                novela: { shape: 'circle', color: { background: '#1a365d', border: '#0d1c33', highlight: '#2b4c7e', hover: '#2b4c7e' }, font: { color: '#ffffff', strokeWidth: 0, size: 13, bold: true } },
+                ator: { shape: 'dot', color: { background: '#e28743', border: '#c05621', highlight: '#c05621', hover: '#c05621' }, font: { color: '#1a202c', size: 14, bold: true } }
+            },
+            physics: {
+                solver: 'forceAtlas2Based',
+                forceAtlas2Based: { gravitationalConstant: -180, centralGravity: 0.015, springLength: 220, springConstant: 0.08, damping: 0.4 },
+                minVelocity: 0.75, stabilization: { iterations: 120 }
+            }
+        };
+        
+        const network = new vis.Network(container, { nodes: nodesDataSet, edges: edgesDataSet }, options);
+
+        function applyFilters() {
+            const selectedDecade = document.getElementById("decadeFilter").value;
+            const selectedAuthor = document.getElementById("authorFilter").value;
+            const selectedNovela = document.getElementById("novelaFilter").value;
+            const selectedAtor = document.getElementById("atorFilter").value;
+
+            let validNovelas = new Set();
+            formattedNodes.forEach(n => {
+                if (n.group === 'novela') {
+                    let d = (selectedDecade === "all" || n.decade === selectedDecade);
+                    let a = (selectedAuthor === "all" || n.author === selectedAuthor);
+                    let nv = (selectedNovela === "all" || n.id == selectedNovela);
+                    if (d && a && nv) validNovelas.add(n.id);
+                }
+            });
+
+            let validAtores = new Set();
+            formattedNodes.forEach(n => {
+                if (n.group === 'ator') {
+                    let at = (selectedAtor === "all" || n.id == selectedAtor);
+                    if (at) validAtores.add(n.id);
+                }
+            });
+
+            let finalNodesToShow = new Set();
+            edgesDataSet.forEach(edge => {
+                if (validNovelas.has(edge.to) && validAtores.has(edge.from)) {
+                    finalNodesToShow.add(edge.to);
+                    finalNodesToShow.add(edge.from);
+                }
+                if (validNovelas.has(edge.from) && validAtores.has(edge.to)) {
+                    finalNodesToShow.add(edge.from);
+                    finalNodesToShow.add(edge.to);
+                }
+            });
+
+            const nodeUpdates = [];
+            nodesDataSet.forEach(node => { nodeUpdates.push({ id: node.id, hidden: !finalNodesToShow.has(node.id) }); });
+            nodesDataSet.update(nodeUpdates);
+            network.fit({ animation: { duration: 500 } });
+        }
+
+        function clearFilters() {
+            document.getElementById("decadeFilter").value = "all";
+            document.getElementById("authorFilter").value = "all";
+            document.getElementById("novelaFilter").value = "all";
+            document.getElementById("atorFilter").value = "all";
+            applyFilters();
+        }
+
+        function exportGrafo() {
+            const canvas = document.querySelector('#mynetwork canvas');
+            if(canvas) {
+                const link = document.createElement('a');
+                link.download = 'teia_teledramaturgia_globo.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            }
+        }
+
+        network.on("selectNode", function (params) {
+            const selectedNodeId = params.nodes[0];
+            const connectedEdgesIds = network.getConnectedEdges(selectedNodeId);
+            const updates = [];
+            edgesDataSet.forEach((edge) => {
+                if (connectedEdgesIds.includes(edge.id)) { updates.push({ id: edge.id, length: 60, color: { opacity: 1, color: '#c05621' } }); } 
+                else { updates.push({ id: edge.id, length: 600, color: { opacity: 0.03, color: '#cbd5e0' } }); }
+            });
+            edgesDataSet.update(updates);
+        });
+
+        network.on("deselectNode", function () {
+            const updates = [];
+            edgesDataSet.forEach((edge) => { updates.push({ id: edge.id, length: undefined, color: { opacity: 0.35, color: '#cbd5e0' } }); });
+            edgesDataSet.update(updates);
+        });
+
+        network.on("hoverNode", function () { network.canvas.body.container.style.cursor = 'pointer'; });
+        network.on("blurNode", function () { network.canvas.body.container.style.cursor = 'default'; });
+
+        function zoomIn() { network.moveTo({ scale: network.getScale() * 1.5, animation: { duration: 300 } }); }
+        function zoomOut() { network.moveTo({ scale: network.getScale() / 1.5, animation: { duration: 300 } }); }
+        function resetZoom() { network.fit({ animation: { duration: 500 } }); }
+
+        // --- GRÁFICOS CHART.JS ---
+        Chart.defaults.font.family = "'Segoe UI', Tahoma, sans-serif";
+        Chart.defaults.color = "#4a5568";
+
+        const ctxMix = document.getElementById('ibopeCapsChart').getContext('2d');
+        new Chart(ctxMix, {
+            type: 'bar',
+            data: {
+                labels: ['Irmãos Coragem (70)', 'Selva de Pedra (72)', 'Pecado Capital (75)', 'O Astro (77)', 'Roque Santeiro (85)', 'Vale Tudo (88)', 'Tieta (89)', 'O Rei do Gado (96)', 'Torre de Babel (98)', 'O Clone (01)', 'S. do Destino (04)', 'Avenida Brasil (12)', 'Amor de Mãe (19)', 'Pantanal (22)', 'Terra e Paixão (23)', 'Mania de Você (24)', 'Vale Tudo Remake (25)'],
+                datasets: [
+                    { label: 'Ibope (Pontos)', type: 'line', data: [60, 80, 59, 60, 74, 56, 65, 52, 47, 47, 50, 39, 31, 30, 27, 21, 24], borderColor: '#e28743', backgroundColor: '#e28743', borderWidth: 3, yAxisID: 'yIbope', tension: 0.3, pointRadius: 4 },
+                    { label: 'Qtd. Capítulos', type: 'bar', data: [328, 243, 167, 225, 209, 204, 196, 209, 203, 221, 221, 179, 125, 167, 221, 167, 173], backgroundColor: 'rgba(26, 54, 93, 0.7)', yAxisID: 'yCaps', borderRadius: 4 }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid: { display: false } }, yIbope: { type: 'linear', position: 'left', min: 0, max: 100 }, yCaps: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, min: 50, max: 350 } } }
+        });
+
+        const labelsAutores = ['Janete Clair', 'Aguinaldo Silva', 'Sílvio de Abreu', 'Gilberto Braga', 'Manoel Carlos', 'Glória Perez', 'Walcyr Carrasco', 'João Emanuel C.'];
+        const ctxAutoresVol = document.getElementById('autoresVolumeChart').getContext('2d');
+        new Chart(ctxAutoresVol, {
+            type: 'bar',
+            data: { labels: labelsAutores, datasets: [{ label: 'Número de Novelas', data: [13, 15, 6, 11, 7, 9, 4, 5], backgroundColor: ['#0d1c33', '#1a365d', '#2b4c7e', '#3b629f', '#6093e2', '#76a8f7', '#8bbdff', '#a1d2ff'], borderRadius: 4 }] },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: 'Volume de Obras' } }, y: { grid: { display: false } } } }
+        });
+
+        const ctxAutoresIbope = document.getElementById('autoresIbopeChart').getContext('2d');
+        new Chart(ctxAutoresIbope, {
+            type: 'bar',
+            data: { labels: labelsAutores, datasets: [{ label: 'Média de Ibope (Pontos)', data: [56.6, 47.8, 47.6, 46.7, 43.5, 41.0, 34.2, 32.2], backgroundColor: '#c05621', borderRadius: 4 }] },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: 'Média de Audiência' }, min: 20, max: 70 }, y: { grid: { display: false }, position: 'right' } } }
+        });
+
+        const labelsAtoresVol = ['Tony Ramos', 'Antônio Fagundes', 'Tarcísio Meira', 'José Mayer', 'Glória Pires', 'Regina Duarte', 'Susana Vieira', 'Marcos Palmeira', 'Francisco Cuoco', 'Murilo Benício'];
+        const ctxAtoresVol = document.getElementById('atoresVolumeChart').getContext('2d');
+        new Chart(ctxAtoresVol, {
+            type: 'bar',
+            data: { labels: labelsAtoresVol, datasets: [{ label: 'Obras no Horário Nobre', data: [16, 14, 13, 12, 11, 10, 10, 9, 9, 9], backgroundColor: '#2b4c7e', borderRadius: 4 }] },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: 'Qtd. de Participações Principais' } }, y: { grid: { display: false } } } }
+        });
+
+        const labelsAtoresIbope = ['Regina Duarte', 'Lima Duarte', 'Betty Faria', 'Francisco Cuoco', 'Tarcísio Meira', 'Glória Menezes', 'Joana Fomm', 'Antônio Fagundes', 'Tony Ramos', 'José Mayer'];
+        const ctxAtoresIbope = document.getElementById('atoresIbopeChart').getContext('2d');
+        new Chart(ctxAtoresIbope, {
+            type: 'bar',
+            data: { labels: labelsAtoresIbope, datasets: [{ label: 'Média de Ibope Histórica', data: [62.4, 61.5, 59.8, 58.0, 55.3, 54.1, 54.0, 51.6, 49.2, 48.5], backgroundColor: '#c05621', borderRadius: 4 }] },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: 'Média de Ibope' }, min: 30, max: 70 }, y: { grid: { display: false }, position: 'right' } } }
+        });
+    </script>
+</body>
+</html>
